@@ -9,6 +9,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import DuocQuin.Horarios.dto.BulkRandomRequest;
+import DuocQuin.Horarios.model.Turno;
+import DuocQuin.Horarios.repository.TurnoRepository;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.Random;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +28,11 @@ public class HorarioService {
     
     @Autowired
     private HorarioRepository horarioRepository;
+
+    @Autowired
+    private TurnoRepository turnoRepository;
+
+    private final Random random = new Random();
     
     @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "findAllFallback")
     public List<Horario> findAll() {
@@ -95,7 +106,7 @@ public class HorarioService {
     @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "findByUsuarioIdFallback")
     public List<Horario> findByUsuarioId(Long idUsuario) {
         logger.info("Obteniendo horarios para el usuario: {}", idUsuario);
-        return horarioRepository.findByUsuarioIdUsuario(idUsuario);
+        return horarioRepository.findByIdUsuario(idUsuario);
     }
     
     public List<Horario> findByUsuarioIdFallback(Long idUsuario, Exception e) {
@@ -117,7 +128,7 @@ public class HorarioService {
     @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "findBySalaIdFallback")
     public List<Horario> findBySalaId(Long idSala) {
         logger.info("Obteniendo horarios para la sala: {}", idSala);
-        return horarioRepository.findBySalaIdSala(idSala);
+        return horarioRepository.findByIdSala(idSala);
     }
     
     public List<Horario> findBySalaIdFallback(Long idSala, Exception e) {
@@ -145,5 +156,143 @@ public class HorarioService {
     public List<Horario> findByFechaBetweenFallback(LocalDate fechaInicio, LocalDate fechaFin, Exception e) {
         logger.error("Circuit breaker activado para findByFechaBetween: {}", e.getMessage());
         return List.of();
+    }
+
+    @Transactional
+    public List<Horario> generarHorariosAleatorios(BulkRandomRequest request) {
+        logger.info("Iniciando generación masiva aleatoria para {} usuarios", request.getIdUsuarios().size());
+        List<Horario> nuevosHorarios = new ArrayList<>();
+        List<Turno> turnosDisponibles = turnoRepository.findAll();
+        
+        if (turnosDisponibles.isEmpty()) {
+            throw new RuntimeException("No hay turnos configurados en la base de datos");
+        }
+
+        for (Long idUsuario : request.getIdUsuarios()) {
+            // Asignamos un turno fijo para este usuario en este rango para que sea coherente
+            Turno turnoAsignado = turnosDisponibles.get(random.nextInt(turnosDisponibles.size()));
+            Long idSalaAsignada = request.getIdSalas().get(random.nextInt(request.getIdSalas().size()));
+
+            // Definimos horas según el turno
+            LocalTime entrada, salida;
+            switch (turnoAsignado.getNombreTurno()) {
+                case "Diurno":
+                    entrada = LocalTime.of(8, 0);
+                    salida = LocalTime.of(16, 0);
+                    break;
+                case "Vespertino":
+                    entrada = LocalTime.of(16, 0);
+                    salida = LocalTime.of(0, 0);
+                    break;
+                case "Nocturno":
+                default:
+                    entrada = LocalTime.of(0, 0);
+                    salida = LocalTime.of(8, 0);
+                    break;
+            }
+
+            LocalDate actual = request.getFechaInicio();
+            while (!actual.isAfter(request.getFechaFin())) {
+                boolean esFinde = (actual.getDayOfWeek().getValue() >= 6);
+                
+                if (!request.isExcluirFinesSemana() || !esFinde) {
+                    Horario h = new Horario();
+                    h.setFecha(actual);
+                    h.setHoraEntrada(entrada);
+                    h.setHoraSalida(salida);
+                    h.setTurno(turnoAsignado);
+                    h.setIdUsuario(idUsuario);
+                    h.setIdSala(idSalaAsignada);
+                    h.setHorasExtra(0);
+                    nuevosHorarios.add(h);
+                }
+                actual = actual.plusDays(1);
+            }
+        }
+
+        return horarioRepository.saveAll(nuevosHorarios);
+    }
+    
+    @Transactional
+    public List<Horario> generarHorariosPorTurno(Long idTurno, List<Long> idUsuarios, List<Long> idSalas, 
+                                                  LocalDate fechaInicio, LocalDate fechaFin, boolean excluirFinesSemana) {
+        logger.info("Generando horarios para turno {} entre {} y {}", idTurno, fechaInicio, fechaFin);
+        
+        Turno turno = turnoRepository.findById(idTurno)
+                .orElseThrow(() -> new RuntimeException("Turno no encontrado con ID: " + idTurno));
+        
+        List<Horario> nuevosHorarios = new ArrayList<>();
+        
+        for (Long idUsuario : idUsuarios) {
+            Long idSalaAsignada = idSalas.get(random.nextInt(idSalas.size()));
+            
+            LocalDate actual = fechaInicio;
+            while (!actual.isAfter(fechaFin)) {
+                boolean esFinde = (actual.getDayOfWeek().getValue() >= 6);
+                
+                if (!excluirFinesSemana || !esFinde) {
+                    Horario horario = new Horario();
+                    horario.setFecha(actual);
+                    horario.setHoraEntrada(turno.getHoraInicioDefault());
+                    horario.setHoraSalida(turno.getHoraFinDefault());
+                    horario.setTurno(turno);
+                    horario.setIdUsuario(idUsuario);
+                    horario.setIdSala(idSalaAsignada);
+                    horario.setHorasExtra(0);
+                    nuevosHorarios.add(horario);
+                }
+                actual = actual.plusDays(1);
+            }
+        }
+        
+        return horarioRepository.saveAll(nuevosHorarios);
+    }
+    
+    @Transactional
+    public List<Horario> generarHorarioSemanal(Long idUsuario, Long idTurno, Long idSala, LocalDate fechaInicio) {
+        logger.info("Generando horario semanal para usuario {} desde {}", idUsuario, fechaInicio);
+        
+        Turno turno = turnoRepository.findById(idTurno)
+                .orElseThrow(() -> new RuntimeException("Turno no encontrado con ID: " + idTurno));
+        
+        List<Horario> horariosSemana = new ArrayList<>();
+        LocalDate finSemana = fechaInicio.plusDays(6); // Lunes a Domingo
+        
+        LocalDate actual = fechaInicio;
+        while (!actual.isAfter(finSemana)) {
+            boolean esFinde = (actual.getDayOfWeek().getValue() >= 6);
+            
+            if (!esFinde) { // Solo días de semana
+                Horario horario = new Horario();
+                horario.setFecha(actual);
+                horario.setHoraEntrada(turno.getHoraInicioDefault());
+                horario.setHoraSalida(turno.getHoraFinDefault());
+                horario.setTurno(turno);
+                horario.setIdUsuario(idUsuario);
+                horario.setIdSala(idSala);
+                horario.setHorasExtra(0);
+                horariosSemana.add(horario);
+            }
+            actual = actual.plusDays(1);
+        }
+        
+        return horarioRepository.saveAll(horariosSemana);
+    }
+    
+    public List<Horario> getHorariosPorSemana(Long idUsuario, LocalDate fecha) {
+        // Obtener el lunes de la semana de la fecha proporcionada
+        LocalDate lunes = fecha.minusDays(fecha.getDayOfWeek().getValue() - 1);
+        LocalDate domingo = lunes.plusDays(6);
+        
+        logger.info("Obteniendo horarios para usuario {} en la semana del {} al {}", idUsuario, lunes, domingo);
+        return horarioRepository.findByIdUsuarioAndFechaBetween(idUsuario, lunes, domingo);
+    }
+    
+    public List<Horario> getHorariosPorMes(Long idUsuario, int anio, int mes) {
+        LocalDate primerDia = LocalDate.of(anio, mes, 1);
+        LocalDate ultimoDia = primerDia.withDayOfMonth(primerDia.lengthOfMonth());
+        
+        logger.info("Obteniendo horarios para usuario {} en {}/{}", idUsuario, mes, anio);
+        return horarioRepository.findByIdUsuarioAndFechaBetween(idUsuario, primerDia, ultimoDia);
     }
 }

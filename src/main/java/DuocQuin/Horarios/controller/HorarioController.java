@@ -2,6 +2,7 @@ package DuocQuin.Horarios.controller;
 
 import DuocQuin.Horarios.model.Horario;
 import DuocQuin.Horarios.service.HorarioService;
+import DuocQuin.Horarios.dto.BulkRandomRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -94,5 +95,109 @@ public class HorarioController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaFin) {
         List<Horario> horarios = horarioService.findByFechaBetween(fechaInicio, fechaFin);
         return ResponseEntity.ok(horarios);
+    }
+    
+    // Endpoints para administración de horarios
+    
+    @PostMapping("/generar-aleatorios")
+    public ResponseEntity<?> generarHorariosAleatorios(@RequestBody BulkRandomRequest request) {
+        try {
+            List<Horario> horarios = horarioService.generarHorariosAleatorios(request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(horarios);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
+    
+    @PostMapping("/generar-por-turno")
+    public ResponseEntity<?> generarHorariosPorTurno(@RequestBody GenerarHorariosRequest request) {
+        try {
+            List<Horario> horarios = horarioService.generarHorariosPorTurno(
+                request.getIdTurno(),
+                request.getIdUsuarios(),
+                request.getIdSalas(),
+                request.getFechaInicio(),
+                request.getFechaFin(),
+                request.isExcluirFinesSemana()
+            );
+            return ResponseEntity.status(HttpStatus.CREATED).body(horarios);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
+    
+    @PostMapping("/generar-semanal")
+    public ResponseEntity<?> generarHorarioSemanal(@RequestBody GenerarHorarioSemanalRequest request) {
+        try {
+            List<Horario> horarios = horarioService.generarHorarioSemanal(
+                request.getIdUsuario(),
+                request.getIdTurno(),
+                request.getIdSala(),
+                request.getFechaInicio()
+            );
+            return ResponseEntity.status(HttpStatus.CREATED).body(horarios);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
+    
+    // Endpoints para visualización por usuario
+    
+    @GetMapping("/usuario/{idUsuario}/semana")
+    public ResponseEntity<List<Horario>> getHorariosPorSemana(
+            @PathVariable Long idUsuario,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fecha) {
+        List<Horario> horarios = horarioService.getHorariosPorSemana(idUsuario, fecha);
+        return ResponseEntity.ok(horarios);
+    }
+    
+    @GetMapping("/usuario/{idUsuario}/mes")
+    public ResponseEntity<List<Horario>> getHorariosPorMes(
+            @PathVariable Long idUsuario,
+            @RequestParam int anio,
+            @RequestParam int mes) {
+        List<Horario> horarios = horarioService.getHorariosPorMes(idUsuario, anio, mes);
+        return ResponseEntity.ok(horarios);
+    }
+    
+    // DTOs para las peticiones
+    public static class GenerarHorariosRequest {
+        private Long idTurno;
+        private List<Long> idUsuarios;
+        private List<Long> idSalas;
+        private LocalDate fechaInicio;
+        private LocalDate fechaFin;
+        private boolean excluirFinesSemana = true;
+        
+        // Getters y Setters
+        public Long getIdTurno() { return idTurno; }
+        public void setIdTurno(Long idTurno) { this.idTurno = idTurno; }
+        public List<Long> getIdUsuarios() { return idUsuarios; }
+        public void setIdUsuarios(List<Long> idUsuarios) { this.idUsuarios = idUsuarios; }
+        public List<Long> getIdSalas() { return idSalas; }
+        public void setIdSalas(List<Long> idSalas) { this.idSalas = idSalas; }
+        public LocalDate getFechaInicio() { return fechaInicio; }
+        public void setFechaInicio(LocalDate fechaInicio) { this.fechaInicio = fechaInicio; }
+        public LocalDate getFechaFin() { return fechaFin; }
+        public void setFechaFin(LocalDate fechaFin) { this.fechaFin = fechaFin; }
+        public boolean isExcluirFinesSemana() { return excluirFinesSemana; }
+        public void setExcluirFinesSemana(boolean excluirFinesSemana) { this.excluirFinesSemana = excluirFinesSemana; }
+    }
+    
+    public static class GenerarHorarioSemanalRequest {
+        private Long idUsuario;
+        private Long idTurno;
+        private Long idSala;
+        private LocalDate fechaInicio;
+        
+        // Getters y Setters
+        public Long getIdUsuario() { return idUsuario; }
+        public void setIdUsuario(Long idUsuario) { this.idUsuario = idUsuario; }
+        public Long getIdTurno() { return idTurno; }
+        public void setIdTurno(Long idTurno) { this.idTurno = idTurno; }
+        public Long getIdSala() { return idSala; }
+        public void setIdSala(Long idSala) { this.idSala = idSala; }
+        public LocalDate getFechaInicio() { return fechaInicio; }
+        public void setFechaInicio(LocalDate fechaInicio) { this.fechaInicio = fechaInicio; }
     }
 }
