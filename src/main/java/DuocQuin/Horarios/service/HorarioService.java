@@ -9,6 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import DuocQuin.Horarios.dto.EventoHorarioDTO;
+
 import DuocQuin.Horarios.dto.BulkRandomRequest;
 import DuocQuin.Horarios.model.Turno;
 import DuocQuin.Horarios.repository.TurnoRepository;
@@ -31,6 +34,9 @@ public class HorarioService {
 
     @Autowired
     private TurnoRepository turnoRepository;
+
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
     private final Random random = new Random();
     
@@ -59,7 +65,27 @@ public class HorarioService {
     @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "saveFallback")
     public Horario save(Horario horario) {
         logger.info("Guardando nuevo horario");
-        return horarioRepository.save(horario);
+
+        Horario horarioGuardado =
+            horarioRepository.save(horario);
+
+        
+        //Aca empieza se cumple rabbit
+        EventoHorarioDTO evento =
+            new EventoHorarioDTO(
+                horarioGuardado.getIdHorario(),
+                horarioGuardado.getIdUsuario(),
+                "Horario creado correctamente",
+                null
+            );
+
+        rabbitTemplate.convertAndSend(
+            "duocquin.exchange",
+            "horario.creado",
+            evento
+        );
+
+        return horarioGuardado;
     }
     
     public Horario saveFallback(Horario horario, Exception e) {
