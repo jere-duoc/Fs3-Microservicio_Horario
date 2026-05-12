@@ -8,9 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import DuocQuin.Horarios.dto.EventoHorarioDTO;
 
 import DuocQuin.Horarios.dto.BulkRandomRequest;
 import DuocQuin.Horarios.model.Turno;
@@ -65,27 +63,9 @@ public class HorarioService {
     @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "saveFallback")
     public Horario save(Horario horario) {
         logger.info("Guardando nuevo horario");
-
-        Horario horarioGuardado =
-            horarioRepository.save(horario);
-
-        
-        //Aca empieza se cumple rabbit
-        EventoHorarioDTO evento =
-            new EventoHorarioDTO(
-                horarioGuardado.getIdHorario(),
-                horarioGuardado.getIdUsuario(),
-                "Horario creado correctamente",
-                null
-            );
-
-        rabbitTemplate.convertAndSend(
-            "duocquin.exchange",
-            "horario.creado",
-            evento
-        );
-
-        return horarioGuardado;
+        Horario saved = horarioRepository.save(horario);
+        notificarCambio(saved);
+        return saved;
     }
     
     public Horario saveFallback(Horario horario, Exception e) {
@@ -107,7 +87,9 @@ public class HorarioService {
         horario.setIdUsuario(horarioDetails.getIdUsuario());
         horario.setIdSala(horarioDetails.getIdSala());
         
-        return horarioRepository.save(horario);
+        Horario updated = horarioRepository.save(horario);
+        notificarCambio(updated);
+        return updated;
     }
     
     public Horario updateFallback(Long id, Horario horarioDetails, Exception e) {
@@ -236,7 +218,11 @@ public class HorarioService {
             }
         }
 
-        return horarioRepository.saveAll(nuevosHorarios);
+        List<Horario> savedList = horarioRepository.saveAll(nuevosHorarios);
+        for (Horario h : savedList) {
+            notificarCambio(h);
+        }
+        return savedList;
     }
     
     @Transactional
@@ -320,5 +306,15 @@ public class HorarioService {
         
         logger.info("Obteniendo horarios para usuario {} en {}/{}", idUsuario, mes, anio);
         return horarioRepository.findByIdUsuarioAndFechaBetween(idUsuario, primerDia, ultimoDia);
+    }
+
+    private void notificarCambio(Horario horario) {
+        try {
+            logger.info("Enviando notificación RabbitMQ para horario: {}", horario.getIdHorario());
+            // Usando los valores configurados en RabbitConfig del usuario
+            rabbitTemplate.convertAndSend("duocquin.exchange", "horario.creado", horario);
+        } catch (Exception e) {
+            logger.error("Error enviando a RabbitMQ: {}", e.getMessage());
+        }
     }
 }

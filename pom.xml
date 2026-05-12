@@ -48,6 +48,12 @@
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
 
+		<!-- RabbitMQ -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
+
 		<!-- Database -->
 		<dependency>
 			<groupId>com.h2database</groupId>
@@ -90,16 +96,7 @@
 			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-
-		
-	<!-- RabbitMQ-->
-	<dependency>
-    	<groupId>org.springframework.boot</groupId>
-    	<artifactId>spring-boot-starter-amqp</artifactId>
-	</dependency>
-	
 	</dependencies>
-
 
 	<build>
 		<plugins>
